@@ -4,6 +4,7 @@ from langchain_openai import ChatOpenAI
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_core.messages import HumanMessage
 from langgraph.prebuilt import create_react_agent
+import os
 
 def ask_llm(prompt: str, model: str, endpoint: str, api_key: str, use_calculator: bool = False) -> str:
     """

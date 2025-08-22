@@ -29,7 +29,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('asset_agent.log', encoding='utf-8')
+        logging.FileHandler('asset.log', encoding='utf-8')
     ]
 )
 logger = logging.getLogger(__name__)
@@ -60,6 +60,7 @@ LLM_OPENAI_API_KEY = _get_env("LLM_OPENAI_API_KEY", "")
 
 if LLM_OPENAI_API_KEY == "":
     print("LLM_OPENAI_API_KEY не задан — считаем, что вы работаете с локальным OpenAI-совместимым API.")
+    LLM_OPENAI_API_KEY  = "fake_api_key"
 
 # Жёсткая проверка endpoint'а
 if LLM_ENDPOINT is None and LLM_OPENAI_API_KEY == "":
