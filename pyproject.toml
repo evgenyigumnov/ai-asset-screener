@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "asset-ai"
+version = "0.1.0"
+description = ""
+authors = [{ name="Evgeny Igumnov", email="igumnovnsk@gmail.com" }]
+dependencies = [
+  "requests",
+  "yfinance",
+  "pandas",
+  "edgartools",
+  "langgraph",
+  "langchain_openai",
+  "langchain_mcp_adapters",
+  "mcp_server_calculator",
+  "argparse",
+  "dotenv",
+]
+[project.scripts]
+asset-ai = "app.console:main"
