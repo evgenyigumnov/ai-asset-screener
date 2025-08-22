@@ -17,7 +17,11 @@ dependencies = [
   "langchain_mcp_adapters",
   "mcp_server_calculator",
   "argparse",
-  "dotenv",
+  "python-dotenv",
 ]
 [project.scripts]
 asset-ai = "app.console:main"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+exclude = ["cache*"]

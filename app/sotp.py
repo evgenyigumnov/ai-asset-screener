@@ -3,7 +3,7 @@ import math
 import pandas as pd
 
 from app.edgar_extractor import extract_operating_segments, parse_markdown_table
-from yahoo import yahoo
+from app.yahoo import yahoo
 
 # ---- эвристики для маппинга сегмента -> группа компов ----
 _PEER_GROUPS = {

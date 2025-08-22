@@ -1,5 +1,5 @@
 import pandas as pd
-from yahoo import yahoo
+from app.yahoo import yahoo
 
 def _pe_sort_key(s: pd.Series):
     x = pd.to_numeric(s, errors="coerce")

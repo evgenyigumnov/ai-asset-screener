@@ -1,5 +1,5 @@
 import pandas as pd
-from yahoo import yahoo
+from app.yahoo import yahoo
 
 
 def estimate(rows):

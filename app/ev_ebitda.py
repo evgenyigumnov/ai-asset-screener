@@ -1,7 +1,7 @@
 import logging
 
 import pandas as pd
-from yahoo import yahoo
+from app.yahoo import yahoo
 
 logger = logging.getLogger(__name__)
 
