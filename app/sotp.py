@@ -125,8 +125,8 @@ def _normalize_units_df(df: pd.DataFrame) -> pd.DataFrame:
     return df2
 
 
-def calculate_sotp_for_ticker(ticker: str, LLM_MODEL: str, LLM_ENDPOINT: str, LLM_OPENAI_API_KEY: str):
-    seg_md = extract_operating_segments(ticker, LLM_MODEL, LLM_ENDPOINT, LLM_OPENAI_API_KEY)
+def calculate_sotp_for_ticker(ticker: str):
+    seg_md = extract_operating_segments(ticker)
     if not seg_md.strip():
         return {"md": "_Not enough data on operating segments (or 10-K only provides geography); SOTP is not calculated._",
                 "total_implied": None, "premium_pct": None}
@@ -237,10 +237,10 @@ def estimate(rows):
     return total_str
 
 
-def add_sotp(rows, LLM_MODEL, LLM_ENDPOINT, LLM_OPENAI_API_KEY):
+def add_sotp(rows):
     for row in rows:
         ticker = row["Ticker"]
-        res = calculate_sotp_for_ticker(ticker, LLM_MODEL, LLM_ENDPOINT, LLM_OPENAI_API_KEY)
+        res = calculate_sotp_for_ticker(ticker)
         if isinstance(res, dict):
             row["SOTP_MD"] = res.get("md", "")
             row["SOTP_TOTAL"] = res.get("total_implied")

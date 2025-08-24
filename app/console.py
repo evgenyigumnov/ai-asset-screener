@@ -21,6 +21,7 @@ from app.ev_fair_value import estimate as estimate_ev_fair_value
 from app.p_fcf import estimate as estimate_pfcf
 from app.sotp import estimate as estimate_sotp, add_sotp
 from app.yahoo import yahoo
+from app.llm_util import init_llm
 
 import logging
 
@@ -56,9 +57,10 @@ if LLM_OPENAI_API_KEY == "":
     print("LLM_OPENAI_API_KEY not set - you work with local OpenAI-compatible API")
     LLM_OPENAI_API_KEY  = "fake_api_key"
 
-# Жёсткая проверка endpoint'а
 if LLM_ENDPOINT is None and LLM_OPENAI_API_KEY == "":
     raise RuntimeError("Set LLM_ENDPOINT")
+
+init_llm(LLM_MODEL, LLM_ENDPOINT, LLM_OPENAI_API_KEY)
 
 CAP_PE = 200.0
 CAP_PFCF = 300.0
@@ -391,7 +393,7 @@ def analyze_group(group_name: str, tickers: List[str], asset_name: str) -> Dict:
     logger.info("Completed yahoo()")
     
     logger.info("Starting add_ev_fair_value")
-    rows = add_ev_fair_value(rows, LLM_MODEL, LLM_ENDPOINT, LLM_OPENAI_API_KEY)
+    rows = add_ev_fair_value(rows)
     logger.info("Completed add_ev_fair_value")
     
     logger.info("Starting estimate_ev_fair_value")
@@ -401,7 +403,7 @@ def analyze_group(group_name: str, tickers: List[str], asset_name: str) -> Dict:
     report_float = None
     if asset_name in INSURANCE:
         logger.info("Starting add_float_value for insurance asset")
-        rows = add_float_value(rows, LLM_MODEL, LLM_ENDPOINT, LLM_OPENAI_API_KEY)
+        rows = add_float_value(rows)
         logger.info("Completed add_float_value for insurance asset")
 
         logger.info("Starting estimate_float_value for insurance asset")
@@ -425,7 +427,7 @@ def analyze_group(group_name: str, tickers: List[str], asset_name: str) -> Dict:
         logger.info("Completed estimate_ev_ebitda")
 
     logger.info("Starting add_sotp")
-    rows = add_sotp(rows, LLM_MODEL, LLM_ENDPOINT, LLM_OPENAI_API_KEY)
+    rows = add_sotp(rows)
     logger.info("Completed add_sotp")
     
     logger.info("Starting estimate_sotp")

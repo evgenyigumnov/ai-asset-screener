@@ -305,8 +305,7 @@ def _try_direct_float(items_raw: List[Dict[str, Any]]) -> Optional[float]:
     return v if 50_000 <= abs(v) <= 300_000 else None
 
 
-def extract_float_components_json(ticker: str, model: str, endpoint: str, api_key,
-                                  force_refresh: bool = False) -> List[Dict[str, Any]]:
+def extract_float_components_json(ticker: str, force_refresh: bool = False) -> List[Dict[str, Any]]:
     key = _ticker_key(ticker)
     cache_name = f"{key}.float.json"
 
@@ -330,9 +329,9 @@ def extract_float_components_json(ticker: str, model: str, endpoint: str, api_ke
 
     for ch in chunks:
         prompt = _build_prompt_for_chunk(ch)
-        logger.info("Starting ask_llm with model=%s ticker=%s", model, ticker)
-        ret = ask_llm(prompt, model, endpoint, api_key)
-        logger.info("Finished ask_llm with model=%s ticker=%s", model, ticker)
+        logger.info("Starting ask_llm   ticker=%s",  ticker)
+        ret = ask_llm(prompt)
+        logger.info("Finished ask_llm   ticker=%s",  ticker)
         items = _ensure_json_array(ret)
         if items:
             all_items.extend(items)
@@ -344,15 +343,14 @@ def extract_float_components_json(ticker: str, model: str, endpoint: str, api_ke
     return merged
 
 
-def add_float_value(rows: List[Dict[str, Any]], model: str, endpoint: str, api_key,
-                    force_refresh: bool = False) -> List[Dict[str, Any]]:
+def add_float_value(rows: List[Dict[str, Any]], force_refresh: bool = False) -> List[Dict[str, Any]]:
     for row in rows:
         tk = row.get("Ticker")
         if not tk:
             continue
 
         ev = row.get("EV")
-        items_raw = extract_float_components_json(tk, model, endpoint, api_key, force_refresh=force_refresh) or []
+        items_raw = extract_float_components_json(tk, force_refresh=force_refresh) or []
 
         direct_musd = _try_direct_float(items_raw)
         comps_musd = []

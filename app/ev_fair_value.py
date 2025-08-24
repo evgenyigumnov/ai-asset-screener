@@ -300,7 +300,7 @@ def _build_prompt_for_chunk(chunk: str) -> str:
 
 
 def extract_ev_adjustments_json(
-    ticker: str, model: str, endpoint: str, api_key,  force_refresh: bool = False
+    ticker: str,  force_refresh: bool = False
 ) -> List[Dict[str, Any]]:
     key = _ticker_key(ticker)
     cache_name = f"{key}.ev_fair_value.json"
@@ -325,9 +325,9 @@ def extract_ev_adjustments_json(
 
     for ch in chunks:
         prompt = _build_prompt_for_chunk(ch)
-        logger.info(f"Starting ask_llm with model={model} ticker={ticker}")
-        ret = ask_llm(prompt, model, endpoint, api_key)
-        logger.info(f"Finished ask_llm with model={model} ticker={ticker}")
+        logger.info(f"Starting ask_llm  ticker={ticker}")
+        ret = ask_llm(prompt)
+        logger.info(f"Finished ask_llm ticker={ticker}")
         items = _ensure_json_array(ret)
         if items:
             all_items.extend(items)
@@ -384,7 +384,7 @@ def estimate(rows):
         result += "\n"
     return result
 
-def add_ev_fair_value(rows: List[Dict[str, Any]], model: str, endpoint: str, api_key: str, force_refresh: bool = False) -> List[Dict[str, Any]]:
+def add_ev_fair_value(rows: List[Dict[str, Any]], force_refresh: bool = False) -> List[Dict[str, Any]]:
 
     for row in rows:
         tk = row.get("Ticker")
@@ -392,7 +392,7 @@ def add_ev_fair_value(rows: List[Dict[str, Any]], model: str, endpoint: str, api
             continue
 
         ev_before = row.get("EV")
-        raw_items = extract_ev_adjustments_json(tk, model, endpoint, api_key, force_refresh=force_refresh)
+        raw_items = extract_ev_adjustments_json(tk, force_refresh=force_refresh)
 
         kept, review, dropped = _filter_classify(raw_items, ev_before)
 

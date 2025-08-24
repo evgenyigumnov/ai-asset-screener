@@ -413,7 +413,7 @@ def parse_markdown_table(md: str) -> Optional[pd.DataFrame]:
         return df
     return None
 
-def extract_operating_segments(ticker: str, LLM_MODEL, LLM_ENDPOINT, LLM_OPENAI_API_KEY) -> str:
+def extract_operating_segments(ticker: str) -> str:
     key = _ticker_key(ticker)
     cache_name = f"{key}.operating_segments"
 
@@ -446,9 +446,9 @@ def extract_operating_segments(ticker: str, LLM_MODEL, LLM_ENDPOINT, LLM_OPENAI_
         If there are no operating segments (only geography) — return an empty response (no table).
         """
 
-        logger.info(f"Starting ask_llm with model={LLM_MODEL} for ticker={ticker}")
-        ret = ask_llm(prompt, LLM_MODEL, LLM_ENDPOINT, LLM_OPENAI_API_KEY)
-        logger.info(f"Completed ask_llm with model={LLM_MODEL} for ticker={ticker}")
+        logger.info(f"Starting ask_llm for ticker={ticker}")
+        ret = ask_llm(prompt)
+        logger.info(f"Completed ask_llm for ticker={ticker}")
         ret = re.sub(r'^(?!\|).+', '', ret, flags=re.MULTILINE)
         ret = re.sub(r'\$', '', ret)
         ret = re.sub(r',', '', ret)
