@@ -11,7 +11,7 @@ def estimate(rows):
     df_sorted = df.sort_values(by="Forward P/E", key=_pe_sort_key).reset_index(drop=True)
 
     result = ""
-    result += "Forward P/E (Price-to-Earnings = цена акции / прибыль на акцию) по сектору экономики:\n"
+    result += "Forward P/E (Price-to-Earnings = share price / earnings per share) by sector of the economy:\n"
     view_cols = ["Ticker", "Company", "Forward P/E"]
     result += df_sorted.loc[:, view_cols].to_string(index=False) + "\n"
 

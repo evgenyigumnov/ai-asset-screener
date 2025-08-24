@@ -137,9 +137,9 @@ def fetch_10k_markdown(ticker: str) -> Optional[str]:
 
 
 def _build_prompt_for_chunk(chunk: str) -> str:
-    return f"""
-    {chunk}
+    head = f"{chunk}\n\n"
 
+    body = """
     10-K fragment (analyze ONLY this text):
 
     You are a financial analyst. A 10-K excerpt (markdown) is GIVEN. We need the INSURANCE FLOAT AS OF THE END OF THE MOST RECENT YEAR.
@@ -157,7 +157,7 @@ def _build_prompt_for_chunk(chunk: str) -> str:
 
     Return ONLY a JSON array. Object format:
     {
-    "what": "<string label>",
+      "what": "<string label>",
       "delta": <number in USD millions>,
       "source": "balance" | "note",
       "as_of": <year, e.g., 2024 or 2023>
@@ -172,7 +172,7 @@ def _build_prompt_for_chunk(chunk: str) -> str:
 
     If nothing is found, return an empty array: []
     """.strip()
-
+    return head + body
 
 
 _DROP_RE = re.compile(
