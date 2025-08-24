@@ -48,16 +48,13 @@ def safe_get_name(ticker: str):
 
 
 def safe_get_market_cap(ticker: str):
-    """Пытаемся взять рыночную капитализацию (USD)."""
     t = yf.Ticker(_yahoo_symbol(ticker))
     val = None
-    # 1) fast_info
     try:
         fi = t.fast_info
         val = fi.get("market_cap", None)
     except Exception:
         pass
-    # 2) info
     if val is None:
         try:
             info = t.get_info()
@@ -86,10 +83,6 @@ def _to_float_safe(x):
         return None
 
 def _find_row_case_insensitive(df: pd.DataFrame, keys):
-    """
-    Ищет строку в df по одному из ключей (кейсы/пробелы/подчёркивания игнорируются).
-    Возвращает pd.Series или None.
-    """
     if not isinstance(df, pd.DataFrame) or df.empty:
         return None
     norm = lambda s: "".join(str(s).lower().split()).replace("_", "")
@@ -101,15 +94,8 @@ def _find_row_case_insensitive(df: pd.DataFrame, keys):
     return None
 
 def safe_get_fcf_ttm(ticker: str):
-    """
-    FCF (TTM) в USD.
-    1) Пытаемся суммировать последние 4 квартала 'Free Cash Flow'.
-    2) Если нет — считаем из OCF и CapEx: FCF = OCF - CapEx.
-    3) Фоллбэк — годовой cashflow (последний период).
-    """
     t = yf.Ticker(_yahoo_symbol(ticker))
 
-    # ---- 1) Quarterly: прямая строка Free Cash Flow
     try:
         qcf = t.quarterly_cashflow
         if isinstance(qcf, pd.DataFrame) and not qcf.empty:
@@ -151,7 +137,6 @@ def safe_get_fcf_ttm(ticker: str):
     except Exception:
         pass
 
-    # ---- 3) Annual fallback: прямая строка Free Cash Flow
     try:
         acf = t.cashflow
         if isinstance(acf, pd.DataFrame) and not acf.empty:
@@ -163,7 +148,6 @@ def safe_get_fcf_ttm(ticker: str):
                 val = _to_float_safe(row_fcf_a.values[0] if len(row_fcf_a.values) > 0 else None)
                 if val is not None and not math.isnan(val) and not math.isinf(val):
                     return val
-            # Annual: считаем FCF = OCF - CapEx за последний год
             row_ocf_a = _find_row_case_insensitive(
                 acf,
                 [
@@ -189,15 +173,7 @@ def safe_get_fcf_ttm(ticker: str):
     return None
 
 def safe_get_cash_balance(ticker: str):
-    """
-    Берём кэш с баланса.
-    Порядок попыток:
-      - 'Cash And Cash Equivalents'
-      - 'Cash'
-      - 'Cash And Cash Equivalents And Short Term Investments'
-    """
     t = yf.Ticker(_yahoo_symbol(ticker))
-    # Quarterly сначала — свежее
     for bs in (t.quarterly_balance_sheet, t.balance_sheet):
         try:
             if isinstance(bs, pd.DataFrame) and not bs.empty:
@@ -219,23 +195,16 @@ def safe_get_cash_balance(ticker: str):
 
 
 def safe_get_total_debt(ticker: str):
-    """
-    Берём общий долг:
-      - 'Total Debt'
-      иначе суммируем Short/Current + Long Term Debt.
-    """
     t = yf.Ticker(_yahoo_symbol(ticker))
     for bs in (t.quarterly_balance_sheet, t.balance_sheet):
         try:
             if isinstance(bs, pd.DataFrame) and not bs.empty:
-                # 1) Total Debt
                 row_total = _find_row_case_insensitive(bs, ["Total Debt", "TotalDebt"])
                 if row_total is not None:
                     val = _to_float_safe(row_total.values[0] if len(row_total.values) > 0 else None)
                     if val is not None and not math.isnan(val) and not math.isinf(val):
                         return val
 
-                # 2) Сумма short + long
                 row_short = _find_row_case_insensitive(
                     bs,
                     ["Short Long Term Debt", "Short/Current Long Term Debt", "Current Debt"]
@@ -262,14 +231,12 @@ def safe_get_enterprise_value(ticker: str):
 
     candidates = []
 
-    # 1) fast_info
     try:
         fi = t.fast_info
         candidates.append(_to_float_safe(fi.get("enterprise_value")))
     except Exception:
         pass
 
-    # 2) info / get_info
     for getter in (t.get_info, lambda: t.info):
         try:
             info = getter()
@@ -277,7 +244,6 @@ def safe_get_enterprise_value(ticker: str):
         except Exception:
             pass
 
-    # 3) собственный расчёт (лучше всегда иметь)
     debt = safe_get_total_debt(ticker) or 0.0
     cash = safe_get_cash_balance(ticker) or 0.0
     computed = mcap + debt - cash
@@ -286,19 +252,12 @@ def safe_get_enterprise_value(ticker: str):
     def ok(x):
         return (x is not None) and (x > 0) and (not math.isinf(x)) and (not math.isnan(x))
 
-    # приоритезируем значения, согласованные с мкап
     plausible = [x for x in candidates if ok(x) and (0.5*mcap <= x <= 3.0*mcap)]
     if plausible:
         return plausible[0]
 
-    # иначе — наш расчёт
     return computed if ok(computed) else (next((x for x in candidates if ok(x)), None))
 def safe_get_ebit_ttm(ticker: str):
-    """
-    EBIT (TTM) в USD.
-    1) quarterly_financials['Ebit'] — суммируем 4 квартала
-    2) financials['Ebit'] — последний год (fallback)
-    """
     t = yf.Ticker(_yahoo_symbol(ticker))
     try:
         qfin = t.quarterly_financials
@@ -325,18 +284,10 @@ def safe_get_ebit_ttm(ticker: str):
         pass
     return None
 
-# ---------- EBITDA (TTM) ----------
 
 def safe_get_ebitda_ttm(ticker: str):
-    """
-    EBITDA (TTM) в USD.
-    Порядок:
-      1) quarterly_financials['Ebitda'] — суммируем 4 квартала
-      2) financials['Ebitda'] — берём последний год (fallback)
-    """
     t = yf.Ticker(_yahoo_symbol(ticker))
 
-    # 1) Quarterly
     try:
         qfin = t.quarterly_financials
         if isinstance(qfin, pd.DataFrame) and not qfin.empty:
@@ -351,7 +302,6 @@ def safe_get_ebitda_ttm(ticker: str):
     except Exception:
         pass
 
-    # 2) Annual fallback
     try:
         fin = t.financials
         if isinstance(fin, pd.DataFrame) and not fin.empty:
@@ -367,7 +317,7 @@ def safe_get_ebitda_ttm(ticker: str):
 import os
 import json
 
-CACHE_DIR = "cache"  # папка для сохранённых данных
+CACHE_DIR = "cache"
 os.makedirs(CACHE_DIR, exist_ok=True)
 
 def _cache_path(ticker: str) -> str:
@@ -378,16 +328,11 @@ def _yahoo_symbol(tk: str) -> str:
     return _US_SHARE_CLASS.get(tk, tk)
 
 def yahoo(tickers, use_cache: bool = True):
-    """
-    Возвращает массив словарей с метриками по тикерам.
-    Если use_cache=True, пытается читать/писать данные из локальных файлов cache/<TICKER>.json
-    """
     rows = []
     for tk in tickers:
         cache_file = _cache_path(tk)
         data = None
 
-        # --- 1) Чтение из кэша ---
         if use_cache and os.path.exists(cache_file):
             try:
                 with open(cache_file, "r", encoding="utf-8") as f:
@@ -395,7 +340,6 @@ def yahoo(tickers, use_cache: bool = True):
             except Exception:
                 data = None
 
-        # --- 2) Если в кэше нет — грузим из сети ---
         if data is None:
             mcap = safe_get_market_cap(tk)
             fcf_ttm = safe_get_fcf_ttm(tk)
@@ -435,7 +379,6 @@ def yahoo(tickers, use_cache: bool = True):
                 "Cash": cash,
             }
 
-            # --- 3) Сохраняем в кэш ---
             if use_cache:
                 try:
                     with open(cache_file, "w", encoding="utf-8") as f:

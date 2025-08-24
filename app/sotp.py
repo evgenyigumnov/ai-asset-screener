@@ -5,24 +5,22 @@ import pandas as pd
 from app.edgar_extractor import extract_operating_segments, parse_markdown_table
 from app.yahoo import yahoo
 
-# ---- эвристики для маппинга сегмента -> группа компов ----
 _PEER_GROUPS = {
     "software":   ["MSFT","ORCL","IBM","NOW","CRM","ADBE","SNOW","MDB","DDOG","NET","ZS","OKTA"],
     "semis":      ["NVDA","AVGO","AMD","INTC","QCOM","TXN","MU","ARM","ASML","ADI","AMAT","LRCX"],
     "ads":        ["GOOGL","META","NFLX","TTD","SNAP","PINS","RBLX"],
     "auto":       ["TSLA","GM","F","STLA","RIVN","LCID","NIO","LI","XPEV"],
     "ecom":       ["AMZN","SHOP","MELI","EBAY","ETSY","SE","WMT","COST","TGT"],
-    "rail":       ["UNP","CSX","NSC","CNI","CP"],  # железные дороги (для BNSF)
-    "pc_ins":     ["CB","PGR","TRV","ALL","HIG"],  # P&C страхование
-    "life_ins":   ["MET","PRU","AIG","LNC","EQH"], # Life/Annuities
-    "reins":      ["RNR","EG","RGA"],              # перестраховщики
-    "utilities":  ["NEE","DUK","SO","AEP","XEL","PCG"],  # регулируемые utility
-    "industrial": ["HON","GE","ITW","EMR","MMM","CAT"],  # индустриальные/мануфактура
+    "rail":       ["UNP","CSX","NSC","CNI","CP"],
+    "pc_ins":     ["CB","PGR","TRV","ALL","HIG"],
+    "life_ins":   ["MET","PRU","AIG","LNC","EQH"],
+    "reins":      ["RNR","EG","RGA"],
+    "utilities":  ["NEE","DUK","SO","AEP","XEL","PCG"],
+    "industrial": ["HON","GE","ITW","EMR","MMM","CAT"],
     "bigtech":    ["AAPL","MSFT","GOOGL","AMZN","META","NVDA","AVGO","ORCL","ADBE","CRM"],  # дефолт
 }
 
 _SEGMENT_MAP = [
-    # порядок важен: сначала более специфичные!
     (re.compile(r'\breinsur', re.I), "reins"),
     (re.compile(r'\blife|annuities?\b', re.I), "life_ins"),
     (re.compile(r'\binsur|underwrit|general re|geico\b', re.I), "pc_ins"),
@@ -36,7 +34,6 @@ _SEGMENT_MAP = [
     (re.compile(r'auto|vehicle|mobility|\bev\b', re.I), "auto"),
 ]
 
-# точечные оверрайды по тикеру/сегменту (regex по названию сегмента)
 _SEGMENT_OVERRIDES = {
     "BRK.B": [
         (re.compile(r'\bBNSF\b', re.I),                             "rail"),
@@ -48,13 +45,9 @@ _SEGMENT_OVERRIDES = {
 }
 
 
-# кэш медиан EV/EBITDA по группам
 _peer_median_cache = {}
 
 def _peer_multiple_ev_ebit_or_ev_ebitda(tickers):
-    """
-    Возвращает (multiple, label): медиану EV/EBIT; при нехватке данных — EV/EBITDA×1.25.
-    """
     rows = yahoo(tickers)
 
     s_ebit = pd.to_numeric(pd.Series([r.get("EV/EBIT") for r in rows]), errors="coerce")
@@ -76,11 +69,6 @@ def _median_ev_ebit(tickers):
     return float(s.median()) if len(s) else None
 
 def _peer_multiple_for_segment(ticker: str, seg_name: str) -> tuple[str, float, str]:
-    """
-    Возвращает (peer_group_key, multiple, label).
-    label — 'EV/EBIT' или 'EV/EBITDA×1.25' (для подписи в Note).
-    """
-    # 1) сначала — оверрайды для конкретного тикера
     rules = _SEGMENT_OVERRIDES.get(ticker, [])
     for rx, key in rules:
         if rx.search(seg_name or ""):
@@ -89,7 +77,6 @@ def _peer_multiple_for_segment(ticker: str, seg_name: str) -> tuple[str, float, 
                 _peer_median_cache[key] = (mult, lbl)
             return key, *_peer_median_cache[key]
 
-    # 2) общий маппинг
     group_key = "bigtech"
     for rx, key in _SEGMENT_MAP:
         if rx.search(seg_name or ""):
@@ -121,9 +108,6 @@ def _coerce_num(x):
     return None
 
 def _normalize_units_df(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Если похоже, что таблица в тысячах (значения слишком крупные) — делим все числовые колонки на 1000.
-    """
     df2 = df.copy()
 
     def _num(x):
@@ -132,7 +116,6 @@ def _normalize_units_df(df: pd.DataFrame) -> pd.DataFrame:
         except Exception:
             return None
 
-    # простая эвристика по масштабу operating income
     sample = []
     for c in df2.columns:
         sample.extend([_num(v) for v in df2[c].values[:]])
@@ -143,28 +126,16 @@ def _normalize_units_df(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def calculate_sotp_for_ticker(ticker: str, LLM_MODEL: str, LLM_ENDPOINT: str, LLM_OPENAI_API_KEY: str):
-    """
-    Возвращает dict:
-      {
-        "md": markdown-блок,
-        "total_implied": <число EV в USD>,
-        "premium_pct": <SOTP vs EV в %>,
-      }
-    """
     seg_md = extract_operating_segments(ticker, LLM_MODEL, LLM_ENDPOINT, LLM_OPENAI_API_KEY)
     if not seg_md.strip():
-        return {"md": "_Нет достаточных данных по операционным сегментам (или в 10-K дана только география); SOTP не рассчитывается._",
+        return {"md": "_Not enough data on operating segments (or 10-K only provides geography); SOTP is not calculated._",
                 "total_implied": None, "premium_pct": None}
-
     df = parse_markdown_table(seg_md)
     if df is None or df.empty:
-        return {"md": "_Не удалось распарсить таблицу операционных сегментов; SOTP не рассчитывается._",
+        return {"md": "_Failed to parse the operational segment table; SOTP is not calculated._",
                 "total_implied": None, "premium_pct": None}
-
-    # нормализуем юниты
     df = _normalize_units_df(df)
 
-    # колонки
     cols = {c.lower(): c for c in df.columns}
     seg_col = cols.get("segment") or next((c for c in df.columns if "segment" in c.lower()), None)
     rev_col = next((c for c in df.columns if "revenue" in c.lower() or "net sales" in c.lower()), None)
@@ -174,10 +145,9 @@ def calculate_sotp_for_ticker(ticker: str, LLM_MODEL: str, LLM_ENDPOINT: str, LL
                     or re.search(r'pre[-\s]?tax', c, re.I)
                     or re.search(r'segment\s+profit', c, re.I)), None)
     if seg_col is None:
-        return {"md": "_В таблице нет столбца Segment; SOTP не рассчитывается._",
+        return {"md": "_There is no Segment column in the table; SOTP is not calculated._",
                 "total_implied": None, "premium_pct": None}
 
-    # EV для сравнения
     rows = yahoo([ticker])
     cur_ev = rows[0].get("EV")
 
@@ -210,18 +180,17 @@ def calculate_sotp_for_ticker(ticker: str, LLM_MODEL: str, LLM_ENDPOINT: str, LL
                 implied_ev = opi * 1e6 * mult
                 note = f"{mult_label or 'EV/EBIT'}≈{mult:.2f} ({peer_key})"
             elif opi < 0:
-                # страховые сегменты — 0; прочие убыточные — EV/Sales≈1.0× при наличии выручки
                 if peer_key in ("pc_ins", "life_ins", "reins"):
                     implied_ev = 0.0
-                    note = "убыток (insurance): считаем 0 (консервативно)"
+                    note = "loss (insurance): assume 0 (conservative)"
                 elif rev is not None and rev > 0:
                     implied_ev = rev * 1e6 * 1.0
-                    note = "убыток: EV/Sales≈1.0× (fallback)"
+                    note = "loss: EV/Sales≈1.0× (fallback)"
                 else:
                     implied_ev = 0.0
-                    note = "убыток: считаем 0 (консервативно)"
+                    note = "loss: assume 0 (conservative)"
         else:
-            note = "нет Operating income или мультипликатора — пропуск"
+            note = "no Operating income or multiplier - skip"
 
         implied_values.append(implied_ev if implied_ev is not None else 0.0)
         out_rows.append({
@@ -244,34 +213,31 @@ def calculate_sotp_for_ticker(ticker: str, LLM_MODEL: str, LLM_ENDPOINT: str, LL
     ])
 
     md = []
-    md.append("SOTP — оценка по операционным сегментам (EV/EBIT через медиану EV/EBITDA компов × 1.25):")
+    md.append("SOTP - valuation by operating segments (EV/EBIT via median EV/EBITDA of companies × 1.25):")
     md.append(df_out.to_markdown(index=False))
     md.append("")
-    md.append(f"**Итого по сегментам (B$):** {total_implied/1e9:.2f}" if total_implied else "**Итого по сегментам:** —")
+    md.append(f"**Total by segments (B$):** {total_implied / 1e9:.2f}" if total_implied else "**Total by segments:** —")
     if isinstance(cur_ev, (int,float)) and cur_ev > 0:
-        md.append(f"**Текущий EV (B$):** {cur_ev/1e9:.2f}")
+        md.append(f"**Current EV (B$):** {cur_ev / 1e9:.2f}")
     if premium is not None and math.isfinite(premium):
-        # знак: >0 — дисконт к рынку (SOTP выше EV), <0 — премия (дороже SOTP)
-        md.append(f"**Премия/дисконт к SOTP:** {premium:+.1f}%")
+        md.append(f"**Premium/discount to SOTP:** {premium:+.1f}%")
     else:
-        md.append("_Премия/дисконт посчитать нельзя (нет EV или SOTP)._")
+        md.append("_Premium/discount cannot be calculated (no EV or SOTP)._")
 
     return {"md": "\n".join(md), "total_implied": total_implied, "premium_pct": premium}
 
 
 def estimate(rows):
-    """Собираем SOTP-блок по всем тикерам для печати в отчёте."""
     total_str = ""
     for row in rows:
         ticker = row["Ticker"]
         md = row.get("SOTP_MD", "") or row.get("SOTP", "")
         total_str += f"#{ticker}\n{md}\n\n"
-    total_str += "\n\nПримечание: SOTP считает ТОЛЬКО операционные сегменты (ASC 280), считаем только reportable segments (ASC 280). Если у эмитента операционные сегменты определены по географии (как у Apple) — они учитываются. Таблицы чисто по «sales by geography» без операционной прибыли игнорируются."
+    total_str += "\n\nNote: SOTP counts ONLY operating segments (ASC 280), counts only reportable segments (ASC 280). If the issuer's operating segments are defined by geography (like Apple), they are taken into account. Tables purely on \"sales by geography\" without operating profit are ignored."
     return total_str
 
 
 def add_sotp(rows, LLM_MODEL, LLM_ENDPOINT, LLM_OPENAI_API_KEY):
-    """Обогащаем rows корректным SOTP по сегментам + числовыми полями."""
     for row in rows:
         ticker = row["Ticker"]
         res = calculate_sotp_for_ticker(ticker, LLM_MODEL, LLM_ENDPOINT, LLM_OPENAI_API_KEY)
@@ -286,10 +252,3 @@ def add_sotp(rows, LLM_MODEL, LLM_ENDPOINT, LLM_OPENAI_API_KEY):
     return rows
 
 
-if __name__ == "__main__":
-    LLM_ENDPOINT = "http://localhost:1234/v1"
-    LLM_MODEL = "openai/gpt-oss-20b"
-    TICKERS = ["MSFT"]
-    rows = yahoo(TICKERS)
-    rows = add_sotp(rows, LLM_MODEL, LLM_ENDPOINT)
-    print(estimate(rows))

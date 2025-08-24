@@ -20,8 +20,8 @@ def estimate(rows):
     total = raw.notna().sum()
 
     if valid.empty:
-        result += "\nМедианный Forward P/E: нет данных\n"
-        result += "Самая недооценённая/переоценённая: нет данных\n"
+        result += "\nMedian Forward P/E: no data\n"
+        result += "Most Undervalued/Overvalued: no data\n"
         return result
 
     median_pe = valid.median()
@@ -32,19 +32,13 @@ def estimate(rows):
     min_row = df_valid.loc[df_valid["Forward P/E"].idxmin()]
     max_row = df_valid.loc[df_valid["Forward P/E"].idxmax()]
 
-    result += f"\nМедианный Forward P/E по доступным данным: {median_pe:.2f}\n"
-    result += f"IQR (Q3 - Q1, 25%/75%): {iqr:.2f}  (Q1={q1:.2f}, Q3={q3:.2f})\n"
-    result += f"Покрытие: {len(valid)} валидных из {total} доступных.\n"
-    result += "\nСамая «недооценённая» (минимальный Forward P/E):\n"
+    result += f"\nMedian Forward P/E based on available data: {median_pe:.2f}\n"
+    result += f"IQR (Q3 - Q1, 25%/75%): {iqr:.2f} (Q1={q1:.2f}, Q3={q3:.2f})\n"
+    result += f"Coverage: {len(valid)} valid out of {total} available.\n"
+    result += "\nMost \"undervalued\" (minimum Forward P/E):\n"
     result += f"- {min_row['Ticker']} — {min_row['Company']}: {min_row['Forward P/E']:.2f}\n"
-    result += "\nСамая «переоценённая» (максимальный Forward P/E):\n"
+    result += "\nMost \"overvalued\" (maximum Forward P/E):\n"
     result += f"- {max_row['Ticker']} — {max_row['Company']}: {max_row['Forward P/E']:.2f}\n"
-
     return result
 
 
-if __name__ == "__main__":
-    TICKERS = ["AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA"]
-    rows = yahoo(TICKERS)
-    report = estimate(rows)
-    print(report)

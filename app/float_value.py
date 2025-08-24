@@ -9,9 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from edgar import Company, set_identity
 from app.llm_util import ask_llm
-from app.yahoo import yahoo
 
-# Кэш как у других модулей
 CACHE_DIR = Path("cache")
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 logger = logging.getLogger(__name__)
@@ -23,7 +21,6 @@ except Exception:
     pass
 
 
-# ---------- утилиты кэша/нормализации ----------
 def _ticker_key(ticker: str) -> str:
     return re.sub(r"[^A-Za-z0-9_-]+", "_", str(ticker).upper())
 
@@ -44,10 +41,6 @@ def _write_cache_text(fname: str, s: str) -> None:
         pass
 
 def _ensure_json_array(text: str) -> List[Dict[str, Any]]:
-    """
-    Достаём JSON-массив из ответа модели: [{"what": "...", "delta": <число в млн USD>}]
-    delta: + для обязательств, увеличивающих флоут; − для активов (reinsurance recoverable и т.п.).
-    """
     if not text:
         return []
     m = re.search(r"\[.*\]", text, flags=re.S)
@@ -109,12 +102,10 @@ def _filter_best_scope(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     best = [it for it in items if ok(it)]
     if best:
         return best
-    # fallback: тот же год, но source любой
     if target_year is not None:
         best = [it for it in items if it.get("as_of") == target_year]
         if best:
             return best
-    # последний fallback: всё как есть
     return items
 
 def chunk_text(s: str, max_chars: int = 50000, overlap: int = 1000) -> List[str]:
@@ -145,53 +136,51 @@ def fetch_10k_markdown(ticker: str) -> Optional[str]:
         return None
 
 
-# ---------- извлечение флоута из 10-K ----------
 def _build_prompt_for_chunk(chunk: str) -> str:
     return f"""
-{chunk}
+    {chunk}
 
-Фрагмент 10-K (analyze ONLY this text):
+    10-K fragment (analyze ONLY this text):
 
-Ты — финансовый аналитик. ДАН фрагмент 10-K (markdown). Нужен СТРАХОВОЙ ФЛОУТ НА КОНЕЦ ПОСЛЕДНЕГО ГОДА.
+    You are a financial analyst. A 10-K excerpt (markdown) is GIVEN. We need the INSURANCE FLOAT AS OF THE END OF THE MOST RECENT YEAR.
 
-Источник ДАННЫХ — ТОЛЬКО баланс (Consolidated Balance Sheet / Statement of Financial Position) и ПРИМЕЧАНИЯ, которые прямо раскрывают остатки НА ОТЧЕТНУЮ ДАТУ. Игнорируй лимиты, стресс-тесты, выплаты/flows за период, исторические годы.
+    DATA SOURCE — ONLY the balance sheet (Consolidated Balance Sheet / Statement of Financial Position) and the NOTES that explicitly disclose balances AS OF THE REPORTING DATE. Ignore limits, stress tests, payments/flows during the period, and prior years.
 
-Состав флоута (+ = liabilities, − = assets):
-  + Unpaid losses & LAE, Unearned premiums, Future policy benefits, Policyholders’ account balances, Other insurance liabilities
-  − Reinsurance recoverable (в т.ч. on unpaid losses / on policy benefits), Insurance/Reinsurance balances receivable, Prepaid reinsurance premiums, Deferred charge assets for retroactive reinsurance
+    Float composition (+ = liabilities, − = assets):
+      + Unpaid losses & LAE, Unearned premiums, Future policy benefits, Policyholders’ account balances, Other insurance liabilities
+      − Reinsurance recoverable (including on unpaid losses / on policy benefits), Insurance/Reinsurance balances receivable, Prepaid reinsurance premiums, Deferred charge assets for retroactive reinsurance
 
-Правила:
-- Если есть NET — используй NET и НЕ добавляй соответствующие gross/recoverable отдельно.
-- Если NET нет: unpaid = gross − reinsurance recoverable (on unpaid losses); unearned = unearned − prepaid reinsurance premiums.
-- Бери ТОЛЬКО последний доступный год. Конвертируй всё в МЛН USD.
+    Rules:
+    - If there is NET — use NET and DO NOT add the corresponding gross/recoverable separately.
+    - If there is NO NET: unpaid = gross − reinsurance recoverable (on unpaid losses); unearned = unearned − prepaid reinsurance premiums.
+    - Use ONLY the latest available year. Convert everything to USD MILLIONS.
 
-Верни ТОЛЬКО JSON-массив. Объект формата:
-{{
-  "what": "<строковое название>",
-  "delta": <число в млн USD>,
-  "source": "balance" | "note",
-  "as_of": <год, например 2024 или 2023>
-}}
+    Return ONLY a JSON array. Object format:
+    {
+    "what": "<string label>",
+      "delta": <number in USD millions>,
+      "source": "balance" | "note",
+      "as_of": <year, e.g., 2024 or 2023>
+    }
 
-ПРИМЕР:
-[
-  {{"what":"Unpaid losses & LAE (net)","delta": 32500,"source":"balance","as_of":2023}},
-  {{"what":"Unearned premiums (net)","delta": 14200,"source":"balance","as_of":2023}},
-  {{"what":"Reinsurance recoverable","delta": -9800,"source":"note","as_of":2023}}
-]
+    EXAMPLE:
+    [
+      {{"what":"Unpaid losses & LAE (net)","delta": 32500,"source":"balance","as_of":2023}},
+      {{"what":"Unearned premiums (net)","delta": 14200,"source":"balance","as_of":2023}},
+      {{"what":"Reinsurance recoverable","delta": -9800,"source":"note","as_of":2023}}
+    ]
 
-""".strip()
+    If nothing is found, return an empty array: []
+    """.strip()
 
 
-# ---------- паттерны для отбора/неттинга ----------
-# ШУМ, который всегда дропаем (flows/лимиты/смоделированные/PPD и т.п.)
+
 _DROP_RE = re.compile(
     r'(wildfire|hurricane|catastroph|payments?|incurred|modeled|max(imum)?|limit|tripa?|tria|program|'
     r'prior\s+period\s+development|favorable|unfavorable|withdrawals|'
     r'separate\s+account\s+liabilit|deferred\s+acquisition|[^a-z]dac[^a-z]|loss\s+reserve\s+discount|mrb|repurchase)',
     re.I)
 
-# --- Liabilities (приоритет NET) ---
 _UNPAID_NET_RE   = re.compile(r'(unpaid.*loss|loss(es)?\s+and\s+loss\s+(adjustment|expenses?)|(al)?ae).*?\bnet\b', re.I)
 _UNPAID_GROSS_RE = re.compile(r'(unpaid.*loss|loss(es)?\s+and\s+loss\s+(adjustment|expenses?))(?!.*\bnet\b)', re.I)
 _REINS_UNPAID_RE = re.compile(r'reinsurance\s+recoverable.*(unpaid.*loss|loss(es)?\s+and\s+loss\s+(adjustment|expenses?))', re.I)
@@ -200,12 +189,10 @@ _UNEARNED_NET_RE = re.compile(r'\bunearned\s+premium(s)?\b.*\bnet\b', re.I)
 _UNEARNED_GRO_RE = re.compile(r'\bunearned\s+premium(s)?\b(?!.*\bnet\b)', re.I)
 _PREPAID_REINS_RE= re.compile(r'prepaid\s+reinsurance\s+premium', re.I)
 
-# life-компоненты (расширены)
 _FPB_RE          = re.compile(r'(future\s+policy\s+benefit|long[-\s]?duration\s+(insurance\s+)?liabilit)', re.I)
 _PH_ACC_RE       = re.compile(r'policyholders?[’\']?\s+account\s+balances?', re.I)
 _OTHER_INS_L_RE  = re.compile(r'other\s+insurance\s+liabilit', re.I)
 
-# Активы, которые вычитаем
 _REINS_GENERIC_RE= re.compile(r'\breinsurance\s+recoverable\b', re.I)
 _INS_BAL_REC_RE  = re.compile(r'(insurance|reinsurance)\s+balances?\s+receivable|premiums?\s+receivable', re.I)
 _DCH_RETRO_RE    = re.compile(r'deferred\s+charge\s+assets?\s+for\s+retroactive\s+reinsurance', re.I)
@@ -227,7 +214,6 @@ def _pick_max(items, pred):
                 pass
     if not vals:
         return 0.0
-    # Берём одно значение с наибольшим модулем, но возвращаем со знаком
     return max(vals, key=lambda x: abs(x))
 
 def _cap_core(name: str, val_musd: float, ev_usd: Optional[float]) -> float:
@@ -237,10 +223,8 @@ def _cap_core(name: str, val_musd: float, ev_usd: Optional[float]) -> float:
     return val_musd if abs(val_musd) <= limit_musd else 0.0
 
 def _postprocess_float_items(items_raw: List[Dict[str, Any]], ev_usd: Optional[float]) -> Tuple[List[Dict[str, Any]], float]:
-    # 0) убрать шум
     clean = [it for it in items_raw if not _DROP_RE.search(it['what'])]
 
-    # 1) собрать категории (в млн)
     unpaid_net = _pick_max(clean, _UNPAID_NET_RE)
     unpaid_gross = _pick_max(clean, _UNPAID_GROSS_RE) if unpaid_net == 0 else 0.0
     reins_unpaid = _pick_max(clean, _REINS_UNPAID_RE) if unpaid_net == 0 else 0.0
@@ -257,7 +241,6 @@ def _postprocess_float_items(items_raw: List[Dict[str, Any]], ev_usd: Optional[f
     ins_bal_rec = _pick_max(clean, _INS_BAL_REC_RE)
     dch_retro = _pick_max(clean, _DCH_RETRO_RE)
 
-    # 2) неттинг: NET приоритетно; иначе gross − соответствующая reinsurance
     unpaid   = unpaid_net if unpaid_net > 0 else max(0.0, unpaid_gross - reins_unpaid)
     unearned = unearned_net if unearned_net > 0 else max(0.0, unearned_gro - prepaid_rein)
 
@@ -273,15 +256,12 @@ def _postprocess_float_items(items_raw: List[Dict[str, Any]], ev_usd: Optional[f
     if fpb      > 0: comps.append({"what":"Future policy benefits","delta":+fpb})
     if ph_acc   > 0: comps.append({"what":"Policyholders’ account balances","delta":+ph_acc})
     if other_ins_l > 0:
-        # если совпадает (±1%) с unpaid или unearned — считаем дублем и отбрасываем
         def _same(a, b):
             return (a > 0 and b > 0 and abs(a - b) / max(a, b) <= 0.01)
 
         if not (_same(other_ins_l, unpaid) or _same(other_ins_l, unearned)):
             comps.append({"what": "Other insurance liabilities", "delta": +other_ins_l})
 
-    # Активы: generic reinsurance вычитаем ТОЛЬКО если
-    #   (а) использовали gross в unpaid/unearned ИЛИ (б) добавляли life-компоненты.
     use_reins_generic = (unpaid_net == 0 or unearned_net == 0) or (fpb > 0 or ph_acc > 0)
     if use_reins_generic and reins_gen > 0:
         comps.append({"what":"Reinsurance recoverable","delta":-reins_gen})
@@ -290,7 +270,6 @@ def _postprocess_float_items(items_raw: List[Dict[str, Any]], ev_usd: Optional[f
     if dch_retro > 0:
         comps.append({"what":"Deferred charge assets for retroactive reinsurance","delta":-dch_retro})
 
-    # 3) sanity-cap: НЕ применяем к core-бакетам флоута
     CORE_KEYS = (
         "Unpaid losses & LAE (net)",
         "Unearned premiums (net)",
@@ -300,12 +279,11 @@ def _postprocess_float_items(items_raw: List[Dict[str, Any]], ev_usd: Optional[f
     )
 
     if isinstance(ev_usd, (int, float)) and ev_usd > 0:
-        # поднять порог для остальных (не core) — инсуреры большие
         cap_usd = max(2.0 * ev_usd, 250_000_000_000.0)  # 2× EV или $250B
         kept = []
         for c in comps:
             if any(c["what"].startswith(k) for k in CORE_KEYS):
-                kept.append(c)  # ядро не режем
+                kept.append(c)
             else:
                 if abs(c["delta"] * 1_000_000.0) <= cap_usd:
                     kept.append(c)
@@ -319,24 +297,16 @@ def _postprocess_float_items(items_raw: List[Dict[str, Any]], ev_usd: Optional[f
 _FLOAT_DIRECT_RE = re.compile(r'\binsurance\s+float\b.*?(\d+(?:\.\d+)?)\s*(billion|million)', re.I)
 
 def _try_direct_float(items_raw: List[Dict[str, Any]]) -> Optional[float]:
-    # ищем элемент с 'insurance float' от LLM (в млн USD)
     cand = [it for it in items_raw if 'float' in it['what'].lower()]
     if not cand:
         return None
-    # берём максимальный по величине (обычно это текущий год)
     best = max(cand, key=lambda it: abs(float(it['delta'])))
-    # если величина реалистична (50–300 тыс млн)
     v = float(best['delta'])
     return v if 50_000 <= abs(v) <= 300_000 else None
 
 
 def extract_float_components_json(ticker: str, model: str, endpoint: str, api_key,
                                   force_refresh: bool = False) -> List[Dict[str, Any]]:
-    """
-    Достаёт компоненты страхового флоута как список dict'ов
-    [{"what": "...", "delta": <в млн USD>}], объединённый по всем чанкам 10-K.
-    Кладёт кэш в cache/<TICKER>.float.json
-    """
     key = _ticker_key(ticker)
     cache_name = f"{key}.float.json"
 
@@ -360,14 +330,10 @@ def extract_float_components_json(ticker: str, model: str, endpoint: str, api_ke
 
     for ch in chunks:
         prompt = _build_prompt_for_chunk(ch)
-        # print(prompt)
-        # print("+++++++++++++++++++++++++++++++")
         logger.info("Starting ask_llm with model=%s ticker=%s", model, ticker)
         ret = ask_llm(prompt, model, endpoint, api_key)
         logger.info("Finished ask_llm with model=%s ticker=%s", model, ticker)
-        # print(ret)
         items = _ensure_json_array(ret)
-        # print(items)
         if items:
             all_items.extend(items)
 
@@ -378,7 +344,6 @@ def extract_float_components_json(ticker: str, model: str, endpoint: str, api_ke
     return merged
 
 
-# ---------- публичный API: добавить в rows и напечатать отчёт ----------
 def add_float_value(rows: List[Dict[str, Any]], model: str, endpoint: str, api_key,
                     force_refresh: bool = False) -> List[Dict[str, Any]]:
     for row in rows:
@@ -425,10 +390,6 @@ def _fmt_pct(x: Optional[float]) -> str:
         return "—"
 
 def estimate(rows: List[Dict[str, Any]]) -> str:
-    """
-    Текстовый отчёт по флоуту (по всем тикерам в группе),
-    в стиле твоих остальных модулей.
-    """
     lines: List[str] = []
     for row in rows:
         tk = row.get("Ticker")
@@ -442,31 +403,13 @@ def estimate(rows: List[Dict[str, Any]]) -> str:
         lines.append(f"Float: {_fmt_b(fv)}  (Float/EV: {_fmt_pct(share)})")
 
         if not items:
-            lines.append("Компоненты: нет данных (или не найдены в 10-K).")
+            lines.append("Components: no data (or not found in 10-K).")
         else:
-            lines.append("Компоненты (млн USD; + добавляет к флоуту, − уменьшает):")
-            for it in items:  # первые 12 — чтобы не разъезжал лог
+            lines.append("Components (USD million; + adds to float, - decreases):")
+            for it in items:
                 sign = "+" if it['delta'] >= 0 else ""
                 lines.append(f" - {it['what']}: {sign}{it['delta']:.2f}")
-            # rest = max(0, len(items) - 12)
-            # if rest:
-            #     lines.append(f" …и ещё {rest} позиций")
-
-        lines.append("")  # пустая строка между тикерами
+        lines.append("")
     return "\n".join(lines)
 
-
-if __name__ == "__main__":
-    # Простой тест: python -m app.ev_fair_value
-    # Настройки LLM (совпадают с константами в console.py по умолчанию)
-    LLM_ENDPOINT = "http://localhost:1234/v1"
-    LLM_MODEL = "openai/gpt-oss-20b"
-    TICKERS = [
-        "BRK.B",  # Berkshire Hathaway (конгломерат, страховой сегмент: GEICO, Gen Re и др.)
-        "CB",     # Chubb Limited (крупнейший коммерческий страховщик P&C)
-    ]
-    rows = yahoo(TICKERS)
-    rows = add_float_value(rows, LLM_MODEL, LLM_ENDPOINT)
-    result = estimate(rows)
-    print(result)
 
