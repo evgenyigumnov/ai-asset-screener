@@ -4,20 +4,17 @@ import json
 import logging
 import math
 import re
-from pathlib import Path
+
 from typing import Any, Dict, List, Optional, Tuple
 
 from edgar import Company, set_identity
 
 from app.float_value import chunk_text
 from app.llm_util import ask_llm
-from app.yahoo import yahoo
+from app import cache
 
 logger = logging.getLogger(__name__)
 
-
-CACHE_DIR = Path("cache")
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 try:
     set_identity("igumnovnsk@gmail.com")
@@ -29,22 +26,6 @@ def _ticker_key(ticker: str) -> str:
     return re.sub(r"[^A-Za-z0-9_-]+", "_", str(ticker).upper())
 
 
-def _read_cache_text(fname: str) -> Optional[str]:
-    p = CACHE_DIR / fname
-    if not p.exists():
-        return None
-    try:
-        return p.read_text(encoding="utf-8")
-    except Exception:
-        return None
-
-
-def _write_cache_text(fname: str, s: str) -> None:
-    p = CACHE_DIR / fname
-    try:
-        p.write_text(s, encoding="utf-8")
-    except Exception:
-        pass
 
 
 def _to_float(x: Any) -> Optional[float]:
@@ -303,10 +284,10 @@ def extract_ev_adjustments_json(
     ticker: str,  force_refresh: bool = False
 ) -> List[Dict[str, Any]]:
     key = _ticker_key(ticker)
-    cache_name = f"{key}.ev_fair_value.json"
+    cache_name = f"ev_fair_value/{key}.ev_fair_value.json"  # НОВОЕ
 
     if not force_refresh:
-        cached = _read_cache_text(cache_name)
+        cached = cache.read_text(cache_name)
         if cached:
             try:
                 data = json.loads(cached)
@@ -317,7 +298,7 @@ def extract_ev_adjustments_json(
 
     md = _fetch_10k_markdown(ticker)
     if not md or len(md.strip()) == 0:
-        _write_cache_text(cache_name, "[]")
+        cache.write_text(cache_name, "[]")
         return []
 
     chunks = chunk_text(md, max_chars=50000, overlap=1000)
@@ -333,7 +314,7 @@ def extract_ev_adjustments_json(
             all_items.extend(items)
 
     merged = _merge_adjustments(all_items)
-    _write_cache_text(cache_name, json.dumps(merged, ensure_ascii=False))
+    cache.write_text(cache_name, json.dumps(merged, ensure_ascii=False))
     return merged
 
 

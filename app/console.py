@@ -15,6 +15,7 @@ from app.float_value import add_float_value
 from app.float_value import estimate as estimate_float_value
 from app.ev_ebitda import estimate_ev_ebitda
 from app.ev_fair_value import add_ev_fair_value
+from app import cache
 
 from app.forward_p_e import estimate as estimate_fpe
 from app.ev_fair_value import estimate as estimate_ev_fair_value
@@ -528,7 +529,17 @@ def main():
         help = ("List of group keys separated by commas (for example: INSURANCE,BIG_TECH_CORE). "
                 "If not specified, groups are selected automatically by ticker.")
     )
+    parser.add_argument('--use-cache', action='store_true',
+                        help='Enable file cache (default is off)')
+    parser.add_argument('--clean-cache', action='store_true',
+                        help='Clear cache before starting work')
+    parser.add_argument('--cache-dir', default='cache',
+                        help='Directory for cache (default is ./cache)')
+
     args = parser.parse_args()
+    cache.init_cache(args.cache_dir, use_cache=args.use_cache)
+    if args.clean_cache:
+        cache.clean()
 
     asset_name = args.ticker.upper()
 

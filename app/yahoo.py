@@ -1,6 +1,8 @@
 import yfinance as yf
 import math
 import pandas as pd
+from app import cache
+
 def safe_get_forward_pe(ticker: str):
     t = yf.Ticker(_yahoo_symbol(ticker))
     val = None
@@ -314,31 +316,19 @@ def safe_get_ebitda_ttm(ticker: str):
         pass
 
     return None
-import os
-import json
-
-CACHE_DIR = "cache"
-os.makedirs(CACHE_DIR, exist_ok=True)
-
-def _cache_path(ticker: str) -> str:
-    return os.path.join(CACHE_DIR, f"{ticker}.json")
 
 _US_SHARE_CLASS = {"BRK.B":"BRK-B", "BRK.A":"BRK-A", "BF.B":"BF-B", "HEI.A":"HEI-A", "LEN.B":"LEN-B"}
 def _yahoo_symbol(tk: str) -> str:
     return _US_SHARE_CLASS.get(tk, tk)
 
-def yahoo(tickers, use_cache: bool = True):
+def _cache_relpath(ticker: str) -> str:
+    return f"yahoo/{ticker}.json"
+
+def yahoo(tickers):
     rows = []
     for tk in tickers:
-        cache_file = _cache_path(tk)
-        data = None
-
-        if use_cache and os.path.exists(cache_file):
-            try:
-                with open(cache_file, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-            except Exception:
-                data = None
+        rel = _cache_relpath(tk)
+        data = cache.read_json(rel)
 
         if data is None:
             mcap = safe_get_market_cap(tk)
@@ -379,12 +369,7 @@ def yahoo(tickers, use_cache: bool = True):
                 "Cash": cash,
             }
 
-            if use_cache:
-                try:
-                    with open(cache_file, "w", encoding="utf-8") as f:
-                        json.dump(data, f, indent=2)
-                except Exception:
-                    pass
+            cache.write_json(rel, data)
 
         rows.append(data)
 

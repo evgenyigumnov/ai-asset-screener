@@ -9,6 +9,7 @@ from app.float_value import fetch_10k_markdown, chunk_text
 from app.llm_util import ask_llm
 from app.yahoo import yahoo
 from pathlib import Path
+from app import cache
 
 logger = logging.getLogger(__name__)
 
@@ -91,28 +92,11 @@ def _is_valid_llm_table(md: str) -> bool:
     return looks_right or len(lines) >= 3
 
 
-def _ensure_cache_dir() -> None:
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
 
 def _ticker_key(ticker: str) -> str:
     return re.sub(r'[^A-Za-z0-9_-]+', '_', ticker.upper())
 
-def _read_cache(fname: str) -> Optional[str]:
-    p = CACHE_DIR / fname
-    if p.exists():
-        try:
-            return p.read_text(encoding="utf-8")
-        except Exception:
-            return None
-    return None
-
-def _write_cache(fname: str, content: str) -> None:
-    _ensure_cache_dir()
-    p = CACHE_DIR / fname
-    try:
-        p.write_text(content, encoding="utf-8")
-    except Exception:
-        pass
 
 
 
@@ -348,9 +332,9 @@ def extract_relevant_tables(md_text: str) -> List[Dict[str, Any]]:
 
 def ten_k_tables(ticker: str) -> List[Dict[str, Any]]:
     key = _ticker_key(ticker)
-    cache_name = f"{key}.10k"
+    cache_name = f"edgar/{key}.10k"
 
-    cached = _read_cache(cache_name)
+    cached = cache.read_text(cache_name)
     if cached is not None and cached.strip():
         try:
             data = json.loads(cached)
@@ -381,10 +365,7 @@ def ten_k_tables(ticker: str) -> List[Dict[str, Any]]:
             "markdown": t.get("markdown"),
         })
 
-    try:
-        _write_cache(cache_name, json.dumps(serializable, ensure_ascii=False))
-    except Exception:
-        pass
+    cache.write_text(cache_name, json.dumps(serializable, ensure_ascii=False))
 
     return serializable
 
@@ -415,9 +396,9 @@ def parse_markdown_table(md: str) -> Optional[pd.DataFrame]:
 
 def extract_operating_segments(ticker: str) -> str:
     key = _ticker_key(ticker)
-    cache_name = f"{key}.operating_segments"
+    cache_name = f"edgar/{key}.operating_segments"  # НОВОЕ
 
-    cached = _read_cache(cache_name)
+    cached = cache.read_text(cache_name)
     if cached is not None:
         return cached
     total_ret = ""
@@ -425,7 +406,7 @@ def extract_operating_segments(ticker: str) -> str:
 
     md = fetch_10k_markdown(ticker)
     if not md or not md.strip():
-        _write_cache(cache_name, "")
+        cache.write_text(cache_name, total_ret)
         return ""
 
     chunks = chunk_text(md, max_chars=50000, overlap=1000)
@@ -457,7 +438,7 @@ def extract_operating_segments(ticker: str) -> str:
         if total_ret != "":
             break
 
-    _write_cache(cache_name, total_ret)
+    cache.write_text(cache_name, total_ret)
     return total_ret
 
 

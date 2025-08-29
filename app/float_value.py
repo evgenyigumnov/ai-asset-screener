@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from edgar import Company, set_identity
 from app.llm_util import ask_llm
+from app import cache
 
 CACHE_DIR = Path("cache")
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -24,21 +25,6 @@ except Exception:
 def _ticker_key(ticker: str) -> str:
     return re.sub(r"[^A-Za-z0-9_-]+", "_", str(ticker).upper())
 
-def _read_cache_text(fname: str) -> Optional[str]:
-    p = CACHE_DIR / fname
-    if not p.exists():
-        return None
-    try:
-        return p.read_text(encoding="utf-8")
-    except Exception:
-        return None
-
-def _write_cache_text(fname: str, s: str) -> None:
-    p = CACHE_DIR / fname
-    try:
-        p.write_text(s, encoding="utf-8")
-    except Exception:
-        pass
 
 def _ensure_json_array(text: str) -> List[Dict[str, Any]]:
     if not text:
@@ -307,10 +293,10 @@ def _try_direct_float(items_raw: List[Dict[str, Any]]) -> Optional[float]:
 
 def extract_float_components_json(ticker: str, force_refresh: bool = False) -> List[Dict[str, Any]]:
     key = _ticker_key(ticker)
-    cache_name = f"{key}.float.json"
+    cache_name = f"float/{key}.float.json"
 
     if not force_refresh:
-        cached = _read_cache_text(cache_name)
+        cached = cache.read_text(cache_name)
         if cached:
             try:
                 data = json.loads(cached)
@@ -321,7 +307,7 @@ def extract_float_components_json(ticker: str, force_refresh: bool = False) -> L
 
     md = fetch_10k_markdown(ticker)
     if not md or not md.strip():
-        _write_cache_text(cache_name, "[]")
+        cache.write_text(cache_name,"[]")
         return []
 
     chunks = chunk_text(md, max_chars=50000, overlap=1000)
@@ -339,7 +325,7 @@ def extract_float_components_json(ticker: str, force_refresh: bool = False) -> L
     merged = _merge_same(all_items)
     merged = _filter_best_scope(merged)
 
-    _write_cache_text(cache_name, json.dumps(merged, ensure_ascii=False))
+    cache.write_text(cache_name, json.dumps(merged, ensure_ascii=False))
     return merged
 
 
