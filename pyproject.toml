@@ -20,16 +20,16 @@ classifiers = [
 ]
 
 dependencies = [
-  "requests",
-  "yfinance",
-  "pandas",
-  "edgartools",
-  "langgraph",
-  "langchain_openai",
-  "langchain_mcp_adapters",
-  "mcp_server_calculator",
+  "requests==2.32.3",
+  "yfinance==0.2.65",
+  "pandas==2.2.3",
+  "edgartools==4.8.1",
+  "langgraph==0.6.6",
+  "langchain_openai==0.3.31",
+  "langchain_mcp_adapters==0.1.9",
+  "mcp_server_calculator==0.2.0",
   "argparse",
-  "python-dotenv",
+  "python-dotenv==1.1.0",
 ]
 
 [project.scripts]
