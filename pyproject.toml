@@ -18,7 +18,6 @@ classifiers = [
   "Topic :: Office/Business :: Financial :: Investment",
   "Environment :: Console",
 ]
-
 dependencies = [
   "requests==2.32.3",
   "yfinance==0.2.65",
