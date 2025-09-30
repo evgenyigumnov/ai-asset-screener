@@ -56,7 +56,7 @@
 ## How to run:
 
 ```bash
-pip install -e .
+pip install ai-asset-screener
 ai-asset-screener --ticker=ADBE --group=BIG_TECH_CORE  --use-cache
 ```
 
