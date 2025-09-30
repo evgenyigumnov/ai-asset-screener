@@ -2,7 +2,7 @@
 
 ## General info
 
-`asset-ai` is a CLI tool for fast, fundamentals-driven equity screening with LLM-assisted reading of 10-K filings. It pulls core metrics from Yahoo Finance, enriches them with fair-value EV adjustments and insurance float extracted from 10-Ks, and builds a segment-level SOTP model. The tool issues BUY/SELL/UNSURE signals per metric and per peer group using robust, outlier-aware rules, then aggregates them into a final verdict. Configuration is done via environment variables (`.env` supported): `LLM_MODEL` (required), plus either an OpenAI-compatible `LLM_ENDPOINT` or `LLM_OPENAI_API_KEY`. Results are printed as readable console reports with group details and a summary table; intermediate data and 10-K parses are cached under `cache/`. Logging goes to `asset.log`.
+`ai-asset-screener` is a CLI tool for fast, fundamentals-driven equity screening with LLM-assisted reading of 10-K filings. It pulls core metrics from Yahoo Finance, enriches them with fair-value EV adjustments and insurance float extracted from 10-Ks, and builds a segment-level SOTP model. The tool issues BUY/SELL/UNSURE signals per metric and per peer group using robust, outlier-aware rules, then aggregates them into a final verdict. Configuration is done via environment variables (`.env` supported): `LLM_MODEL` (required), plus either an OpenAI-compatible `LLM_ENDPOINT` or `LLM_OPENAI_API_KEY`. Results are printed as readable console reports with group details and a summary table; intermediate data and 10-K parses are cached under `cache/`. Logging goes to `asset.log`.
 
 ## Features list
 
@@ -57,7 +57,7 @@
 
 ```bash
 pip install -e .
-asset-ai --ticker=ADBE --group=BIG_TECH_CORE
+ai-asset-screener --ticker=ADBE --group=BIG_TECH_CORE  --use-cache
 ```
 
 .env file example:
